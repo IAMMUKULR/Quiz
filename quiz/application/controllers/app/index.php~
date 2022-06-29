@@ -1,0 +1,302 @@
+<?php
+defined('BASEPATH') or exit('No direct script access allowed');
+
+
+class Index  extends CI_Controller
+{
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        if (!isset($_SESSION['userdata']) || $_SESSION['userdata']['user_logged_status'] != TRUE) {
+            redirect('app/logout');
+        }
+
+        $_SESSION['page_start_time'] = microtime(true);
+    }
+
+
+
+
+    public function quiz($page = "quiz")
+    {
+        if (!file_exists(APPPATH . 'views/app/pages/' . $page . '.php')) {
+            show_404();
+        }
+
+        $data = array();
+
+        $data["title"] = "Quiz";
+
+        $this->load->model("masters_m");
+        $data['classes'] = $this->masters_m->get_all_class();
+        $data['subjects'] = $this->masters_m->get_all_subject();
+
+        $this->load->view('app/templates/header', $data);
+        $this->load->view('app/templates/side_panel', $data);
+        $this->load->view('app/pages/' . $page, $data);
+        $this->load->view('app/templates/footer', $data);
+    }
+
+    public function get_all_quiz()
+    {
+        $data = array();
+        if ($this->input->is_ajax_request()) {
+            $this->load->model("quiz_m");
+            $r = $this->quiz_m->get_all_quiz();
+            if ($r != FALSE) {
+                $data["response"] = TRUE;
+                $data["message"] = count($r) . " Record Found.";
+                $data["total_record"] = count($r);
+                //$data["all_record"] = $r;
+                $all_record = array();
+                foreach($r as $rr)
+                 {
+                  $all_rec = array();
+                  
+                  $all_rec["quiz_id"] = $rr->quiz_id;
+                  $all_rec["quiz_name"] = $rr->quiz_name;
+                  $all_rec["quiz_description"] = $rr->quiz_description;
+                  $all_rec["quiz_instruction"] = $rr->quiz_instruction;
+                  $all_rec["subject_name"] = $rr->subject_name;
+                  $all_rec["quiz_classes_id"] = $rr->quiz_classes_id;
+                  
+                  $all_rec["enc"] = sha1($rr->quiz_id.MY_APP_KEY);
+                  
+                  $all_rec["class_details"] = $this->quiz_m->get_class_details_by_id($rr->quiz_classes_id);
+                  
+                  $all_record[] = $all_rec;
+                 }
+                $data["all_record"] = $all_record;
+            } else {
+                $data["response"] = FALSE;
+                $data["message"] = "No Record Found.";
+            }
+        }
+        echo json_encode($data);
+    }
+
+    public function add_quiz()
+    {
+        $data = array();
+        if ($this->input->is_ajax_request()) {
+            $quiz_name = (isset($_POST["quiz_name"])) ? $this->input->post("quiz_name", TRUE) : "";
+            $quiz_description = (isset($_POST["quiz_description"])) ? $this->input->post("quiz_description", TRUE) : "";
+            $quiz_instruction = (isset($_POST["quiz_instruction"])) ? $this->input->post("quiz_instruction", TRUE) : "";
+            $quiz_subject_id = (isset($_POST["quiz_subject_id"])) ? $this->input->post("quiz_subject_id", TRUE) : "";
+            $quiz_classes_id = (isset($_POST["quiz_classes_id"])) ? $this->input->post("quiz_classes_id", TRUE) : "";
+
+            if (trim($quiz_name) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter quiz name.";
+            } else if (trim($quiz_description) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter description.";
+            } else if (trim($quiz_instruction) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter instruction.";
+            } else if (trim($quiz_subject_id) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Select subject.";
+            }else if (trim($quiz_classes_id) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Choose Class.";
+            }else {
+                $this->load->model("quiz_m");
+                $check_ar = array ("status" => 1 , "quiz_name" => $quiz_name);
+                $r = $this->quiz_m->check_quiz_exists($check_ar);
+                if ($r == FALSE) {
+                    $insert_arr = array("quiz_name" => $quiz_name, "quiz_description" => $quiz_description, "quiz_instruction" => $quiz_instruction,  "subject_id"=> $quiz_subject_id, "quiz_classes_id" => $quiz_classes_id, "eby" => $_SESSION["userdata"]["user_id"], "eat" => date("Y-m-d H:i:s"));
+                    $r = $this->quiz_m->add_quiz($insert_arr);
+                    if ($r > 0) {
+                        $data["response"] = TRUE;
+                        $data["message"] = "Quiz added successfully.";
+                    } else {
+                        $data["response"] = FALSE;
+                        $data["message"] = "Some error occured. Please try again later.";
+                    }
+                } else {
+                    $data["response"] = FALSE;
+                    $data["message"] = "This Quiz already exists.";
+                }
+            }
+        }
+        echo json_encode($data);
+    }
+
+    public function delete_quiz()
+    {
+        $data = array();
+        if ($this->input->is_ajax_request()) {
+            $quiz_id = (isset($_POST["quiz_id"])) ? $this->input->post("quiz_id", TRUE) : 0;
+            if ($quiz_id == 0 || trim($quiz_id) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Invalid Quiz ID.";
+            } else {
+                $this->load->model("quiz_m");
+
+                $update_arr = array("status" => 0, "eby" => $_SESSION["userdata"]["user_id"], "eat" => date("Y-m-d H:i:s"));
+                $r = $this->quiz_m->update_quiz($quiz_id, $update_arr);
+                if ($r > 0) {
+                    $data["response"] = TRUE;
+                    $data["message"] = "Quiz deleted successfully.";
+                } else {
+                    $data["response"] = FALSE;
+                    $data["message"] = "Some error occured. Please try again later.";
+                }
+            }
+        }
+        echo json_encode($data);
+    }
+
+    public function get_quiz_details_by_id()
+    {
+        $data = array();
+        if ($this->input->is_ajax_request()) {
+            $quiz_id = (isset($_POST["quiz_id"])) ? $this->input->post("quiz_id", TRUE) : 0;
+            if ($quiz_id == 0 || trim($quiz_id) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Invalid  Quiz ID.";
+            } else {
+                $this->load->model("quiz_m");
+                $r = $this->quiz_m->get_quiz_details_by_id($quiz_id);
+                if ($r != FALSE) {
+                    $data["response"] = TRUE;
+                    $data["message"] = count($r) . " Record Found.";
+                    $data["total_record"] = count($r);
+                    $data["all_record"] = $r;
+                } else {
+                    $data["response"] = FALSE;
+                    $data["message"] = "No Record Found.";
+                }
+            }
+        }
+        echo json_encode($data);
+    }
+
+    public function edit_quiz()
+    {
+        $data = array();
+        if ($this->input->is_ajax_request()) {
+            $quiz_id = (isset($_POST["quiz_id"])) ? $this->input->post("quiz_id", TRUE) : 0;
+            $quiz_name = (isset($_POST["quiz_name"])) ? $this->input->post("quiz_name", TRUE) : "";
+            $quiz_description = (isset($_POST["quiz_description"])) ? $this->input->post("quiz_description", TRUE) : "";
+            $quiz_instruction = (isset($_POST["quiz_instruction"])) ? $this->input->post("quiz_instruction", TRUE) : "";
+            $quiz_subject_id = (isset($_POST["quiz_subject_id"])) ? $this->input->post("quiz_subject_id", TRUE) : "";
+            $quiz_classes_id = (isset($_POST["quiz_classes_id"])) ? $this->input->post("quiz_classes_id", TRUE) : "";
+            if ($quiz_id == 0 || trim($quiz_id) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Invalid Quiz-ID.";
+            } else if ($quiz_name == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter your quiz name.";
+            } else if (trim($quiz_description) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter your quiz description.";
+            }else if (trim($quiz_instruction) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter instruction.";
+            } else if (trim($quiz_subject_id) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Select subject.";
+            }else if (trim($quiz_classes_id) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Choose class.";
+            } else {
+                $this->load->model("quiz_m");
+                $check_ar = array ("status" => 1 , "quiz_name" => $quiz_name , "quiz_description" => $quiz_description, "quiz_instruction" => $quiz_instruction, "subject_id"=> $quiz_subject_id );
+                $r = $this->quiz_m->check_quiz_exists($check_ar);
+                if ($r == FALSE) {
+                    $update_arr = array("quiz_id" => $quiz_id, "quiz_name" => $quiz_name, "quiz_description" => $quiz_description, "quiz_instruction" => $quiz_instruction, "subject_id"=> $quiz_subject_id,"quiz_classes_id" => $quiz_classes_id, "eby" => $_SESSION["userdata"]["user_id"], "eat" => date("Y-m-d H:i:s"));
+                    $r = $this->quiz_m->update_quiz($quiz_id, $update_arr);
+                    if ($r > 0) {
+                        $data["response"] = TRUE;
+                        $data["message"] = "User profile updated successfully.";
+                    } else {
+                        $data["response"] = FALSE;
+                        $data["message"] = "Some error occured. Please try again later.";
+                    }
+                } else {
+                    $data["response"] = FALSE;
+                    $data["message"] = "This Quiz is already exists. Try with other Quiz.";
+                }
+            }
+        }
+        echo json_encode($data);
+    }
+    
+    public function questions($quiz_id = "" , $enc = "" , $page = 'questions')
+    {
+       if($quiz_id == "" || $enc == "" || $enc != sha1($quiz_id.MY_APP_KEY)){ redirect('app/logout'); exit; }
+       
+       if (!file_exists(APPPATH . 'views/app/pages/' . $page . '.php')) {
+            show_404();
+        }
+
+        $data = array();
+        $data["quiz_id"] = $quiz_id;
+        $data["title"] = "Question";
+        
+        
+
+       $this->load->view('app/templates/header', $data);
+        $this->load->view('app/templates/side_panel', $data);
+        $this->load->view('app/pages/' . $page, $data);
+        $this->load->view('app/templates/footer', $data);
+    }
+    
+    
+    
+    public function add_questions(){
+    $data = array();
+        if ($this->input->is_ajax_request()) {
+            $quiz_id = (isset($_POST["quiz_id"])) ? $this->input->post("quiz_id", TRUE) : "";
+            $question_text = (isset($_POST["question_text"])) ? $this->input->post("question_text", TRUE) : "";
+            $question_description = (isset($_POST["question_description"])) ? $this->input->post("question_description", TRUE) : "";
+            $question_type = (isset($_POST["question_type"])) ? $this->input->post("question_type", TRUE) : "";
+            $question_time = (isset($_POST["question_time"])) ? $this->input->post("question_time", TRUE) : "";
+            $question_marks = (isset($_POST["question_marks"])) ? $this->input->post("question_marks", TRUE) : "";
+             $question_negative_marks = (isset($_POST["question_negative_marks"])) ? $this->input->post("question_negative_marks", TRUE) : "";
+
+            if (trim($question_text) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter Question";
+            } else if (trim($question_type) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Select Question Type.";
+            } else if (trim($question_time) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter Question Time.";
+            } else if (trim($question_marks) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter Question Marks.";
+            }else if (trim($question_negative_marks) == "") {
+                $data["response"] = FALSE;
+                $data["message"] = "Enter Question Negative Marks.";
+            }else {
+                //$this->load->model("quiz_m");
+                //$check_ar = array ("status" => 1 , "question" => $question);
+                //$r = $this->quiz_m->check_quiz_exists($check_ar);
+                //if ($r == FALSE) {
+                    $insert_arr = array("quiz_id" => $quiz_id, "question_text" => $question_text, "question_description" => $question_description,  "question_type"=> $question_type, "question_time" => $question_time, "question_marks"=> $question_marks, "question_negative_marks" => $question_negative_marks, "eby" => $_SESSION["userdata"]["user_id"], "eat" => date("Y-m-d H:i:s"));
+                    $this->load->model("quiz_m");
+                    $r = $this->quiz_m->add_questions($insert_arr);
+                    if ($r > 0) {
+                        $data["response"] = TRUE;
+                        $data["message"] = "Question added successfully.";
+                    } else {
+                        $data["response"] = FALSE;
+                        $data["message"] = "Some error occured. Please try again later.";
+                    }
+                    
+                } //else {
+                   // $data["response"] = FALSE;
+                    //$data["message"] = "This Quiz already exists.";
+               // }
+            }
+        //}
+        echo json_encode($data);
+    
+    }
+}
